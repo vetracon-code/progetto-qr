@@ -9,72 +9,138 @@
     <style>
         :root { --red: #FF3B30; --yellow: #FFCC00; --green: #34C759; --blue: #007AFF; --gray: #8E8E93; }
         body { font-family: -apple-system, system-ui, sans-serif; background: #F2F2F7; margin: 0; padding: 20px; padding-bottom: 100px; }
-        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        header { margin-bottom: 20px; }
+        .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         h1 { font-size: 28px; font-weight: 700; margin: 0; }
+        
+        .admin-controls { display: flex; gap: 10px; margin-bottom: 20px; }
+        .btn-ctrl { flex: 1; padding: 10px; border-radius: 8px; border: none; font-weight: 600; font-size: 12px; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; gap: 5px; }
+        #subscribeBtn { background: var(--blue); }
+        #refreshBtn { background: var(--gray); }
+
         .section-title { font-size: 14px; color: var(--gray); text-transform: uppercase; margin: 20px 0 10px; font-weight: 600; }
-        .card { background: white; border-radius: 16px; padding: 16px; margin-bottom: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-left: 6px solid var(--gray); }
+        .card { background: white; border-radius: 16px; padding: 16px; margin-bottom: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-left: 6px solid var(--gray); position: relative; }
         .card.nuova { border-left-color: var(--red); }
         .card.in-carico { border-left-color: var(--yellow); }
-        .card.risolta { border-left-color: var(--green); }
-        .poi-name { font-weight: 700; font-size: 18px; display: block; }
-        .issue { font-size: 16px; margin: 10px 0; }
-        button { width: 100%; padding: 12px; border-radius: 10px; border: none; font-weight: 600; cursor: pointer; }
+        .card.risolta { border-left-color: var(--green); opacity: 0.8; }
+        
+        .poi-name { font-weight: 700; font-size: 18px; display: block; margin-bottom: 5px; }
+        .issue { font-size: 16px; margin-bottom: 15px; color: #333; }
+        
+        button.action-btn { width: 100%; padding: 12px; border-radius: 10px; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
         .btn-accept { background: var(--yellow); color: black; }
         .btn-complete { background: var(--green); color: white; }
-        .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: white; display: flex; padding: 15px; border-top: 1px solid #ddd; }
-        .tab-item { flex: 1; text-align: center; color: var(--gray); cursor: pointer; }
+        
+        .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); display: flex; padding: 15px; border-top: 1px solid #ddd; }
+        .tab-item { flex: 1; text-align: center; font-size: 12px; color: var(--gray); cursor: pointer; }
         .tab-item.active { color: var(--blue); font-weight: bold; }
     </style>
 </head>
 <body>
-    <header><h1>CityFix</h1><button id="subscribeBtn" style="width:auto; padding: 5px 10px; font-size: 10px; background: var(--blue); color:white;">🔔 Attiva</button></header>
-    <div id="main-content"><div class="section-title">Attivi</div><div id="task-list"></div></div>
-    <div id="archive-section" style="display:none;"><div class="section-title">Archivio</div><div id="archive-list"></div></div>
+
+    <header>
+        <div class="header-top">
+            <h1>CityFix</h1>
+        </div>
+        <div class="admin-controls">
+            <button id="refreshBtn" class="btn-ctrl" onclick="loadReports()">🔄 AGGIORNA</button>
+            <button id="subscribeBtn" class="btn-ctrl">🔔 NOTIFICHE</button>
+        </div>
+    </header>
+
+    <div id="main-content">
+        <div class="section-title">Segnalazioni Attive</div>
+        <div id="task-list"></div>
+    </div>
+
+    <div id="archive-section" style="display:none;">
+        <div class="section-title">Archivio Interventi</div>
+        <div id="archive-list"></div>
+    </div>
+
     <div class="tab-bar">
         <div class="tab-item active" onclick="showTab('active')">⚡ Attivi</div>
         <div class="tab-item" onclick="showTab('archive')">📂 Archivio</div>
     </div>
+
     <script>
         const publicKey = "BDRaXVWmCl7kQJwYu2HhNxAkLc6OKWdiQzngXVocjiRIX2HCYwxTGkS_YNS60NiRzS6qFY0sxO0cBFu-WwBimIE";
+
         function showTab(t) {
             document.getElementById('main-content').style.display = t === 'active' ? 'block' : 'none';
             document.getElementById('archive-section').style.display = t === 'archive' ? 'block' : 'none';
             document.querySelectorAll('.tab-item').forEach(e => e.classList.remove('active'));
             event.currentTarget.classList.add('active');
         }
+
         async function loadReports() {
-            const res = await fetch("/api/reports");
-            const reports = await res.json();
-            const list = document.getElementById("task-list");
-            const archive = document.getElementById("archive-list");
-            list.innerHTML = ""; archive.innerHTML = "";
-            reports.forEach(r => {
-                const card = document.createElement('div');
-                card.className = `card ${r.status}`;
-                card.innerHTML = `<b>${r.poi_name}</b><div class="issue">${r.issue_type}</div>`;
-                if(r.status === 'nuova') {
-                    const b = document.createElement('button'); b.className='btn-accept'; b.innerText='PRENDI IN CARICO';
-                    b.onclick = () => updateStatus(r.id, 'in-carico'); card.appendChild(b);
-                    list.appendChild(card);
-                } else if(r.status === 'in-carico') {
-                    const b = document.createElement('button'); b.className='btn-complete'; b.innerText='COMPLETA';
-                    b.onclick = () => updateStatus(r.id, 'risolta'); card.appendChild(b);
-                    list.appendChild(card);
-                } else {
-                    card.innerHTML += '<small>Completato</small>'; archive.appendChild(card);
-                }
-            });
+            const btn = document.getElementById('refreshBtn');
+            btn.innerText = "⏳...";
+            try {
+                const res = await fetch("/api/reports");
+                const reports = await res.json();
+                const list = document.getElementById("task-list");
+                const archive = document.getElementById("archive-list");
+                
+                list.innerHTML = reports.filter(r => r.status !== 'risolta').length ? "" : "<p style='color:gray'>Nessun intervento attivo</p>";
+                archive.innerHTML = "";
+
+                reports.forEach(r => {
+                    const card = document.createElement('div');
+                    card.className = `card ${r.status}`;
+                    card.innerHTML = `
+                        <span class="poi-name">${r.poi_name}</span>
+                        <div class="issue">Problema: <strong>${r.issue_type}</strong></div>
+                    `;
+
+                    if(r.status === 'nuova') {
+                        const b = document.createElement('button');
+                        b.className = 'action-btn btn-accept';
+                        b.innerText = 'PRENDI IN CARICO';
+                        b.onclick = () => updateStatus(r.id, 'in-carico');
+                        card.appendChild(b);
+                        list.appendChild(card);
+                    } else if(r.status === 'in-carico') {
+                        const b = document.createElement('button');
+                        b.className = 'action-btn btn-complete';
+                        b.innerText = 'COMPLETA';
+                        b.onclick = () => updateStatus(r.id, 'risolta');
+                        card.appendChild(b);
+                        list.appendChild(card);
+                    } else {
+                        card.innerHTML += '<small style="color:var(--green)">✓ Risolto</small>';
+                        archive.appendChild(card);
+                    }
+                });
+            } catch (e) { console.error(e); }
+            btn.innerText = "🔄 AGGIORNA";
         }
+
         async function updateStatus(id, s) {
-            await fetch(`/api/reports/${id}/status`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({status:s, operatore:"Staff"}) });
+            await fetch(`/api/reports/${id}/status`, {
+                method: "POST",
+                headers: {"Content-Type":"application/json"},
+                body: JSON.stringify({status:s, operatore:"Staff"})
+            });
             loadReports();
         }
+
         document.getElementById('subscribeBtn').onclick = async () => {
-            const reg = await navigator.serviceWorker.register('/service-worker.js');
-            const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
-            await fetch('/api/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub }), headers: { 'Content-Type': 'application/json' } });
-            alert('Notifiche OK');
+            try {
+                const reg = await navigator.serviceWorker.register('/service-worker.js');
+                const sub = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(publicKey)
+                });
+                await fetch('/api/push/subscribe', {
+                    method: 'POST',
+                    body: JSON.stringify({ subscription: sub }),
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                alert('Notifiche attivate correttamente!');
+            } catch (e) { alert('Errore attivazione: ' + e); }
         };
+
         function urlBase64ToUint8Array(b64) {
             const padding = '='.repeat((4 - b64.length % 4) % 4);
             const b = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -83,8 +149,10 @@
             for (let i = 0; i < raw.length; ++i) out[i] = raw.charCodeAt(i);
             return out;
         }
-        setInterval(loadReports, 5000);
+
+        // Caricamento iniziale e timer
         loadReports();
+        setInterval(loadReports, 10000); // Aggiorna ogni 10 secondi
     </script>
 </body>
 </html>

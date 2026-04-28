@@ -1,0 +1,14 @@
+{
+  "name": "progetto-qr",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "express": "^4.18.0",
+    "pg": "^8.7.0",
+    "web-push": "^3.4.0"
+  }
+}

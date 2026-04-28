@@ -9,29 +9,20 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/564/564619.png">
     <style>
-        body { font-family: -apple-system, system-ui, sans-serif; background: #f4f7f6; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; max-width: 320px; width: 90%; }
-        img { width: 80px; margin-bottom: 20px; }
-        h1 { font-size: 22px; color: #333; margin-bottom: 10px; }
-        p { color: #666; font-size: 14px; line-height: 1.5; margin-bottom: 25px; }
-        button { background: #007AFF; color: white; border: none; padding: 15px 25px; border-radius: 12px; font-weight: 600; font-size: 16px; width: 100%; cursor: pointer; transition: transform 0.2s; }
-        button:active { transform: scale(0.98); }
-        .step { font-size: 12px; color: #999; margin-top: 20px; border-top: 1px solid #eee; pt: 15px; }
+        body { font-family: -apple-system, sans-serif; background: #f4f7f6; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; max-width: 320px; }
+        button { background: #007AFF; color: white; border: none; padding: 15px 25px; border-radius: 12px; font-weight: 600; width: 100%; cursor: pointer; }
     </style>
 </head>
 <body>
     <div class="card">
-        <img src="https://cdn-icons-png.flaticon.com/512/564/564619.png" alt="Logo">
         <h1>Centro Notifiche</h1>
-        <p>Per ricevere gli avvisi in tempo reale sulle scansioni dei QR, attiva il servizio su questo dispositivo.</p>
+        <p>Attiva le notifiche per ricevere le segnalazioni dei QR.</p>
         <button id="subscribeBtn">ATTIVA NOTIFICHE</button>
-        <div class="step">
-            Se non l'hai fatto: premi <strong>Condividi</strong> e <strong>"Aggiungi alla schermata Home"</strong>
-        </div>
     </div>
 
     <script>
-        const subscribeBtn = document.getElementById('subscribeBtn');
+        const publicKey = "BDRaXVWmCl7kQJwYu2HhNxAkLc6OKWdiQzngXVocjiRIX2HCYwxTGkS_YNS60NiRzS6qFY0sxO0cBFu-WwBimIE";
 
         function urlBase64ToUint8Array(base64String) {
             const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -42,30 +33,19 @@
             return outputArray;
         }
 
-        subscribeBtn.addEventListener('click', async () => {
-            try {
-                const reg = await navigator.serviceWorker.register('/service-worker.js');
-                await navigator.serviceWorker.ready;
-                
-                const response = await fetch('/api/push/public-key');
-                const { publicKey } = await response.json();
-
-                const subscription = await reg.pushManager.subscribe({
-                    userVisibleOnly: true,
-                    applicationServerKey: urlBase64ToUint8Array(publicKey)
-                });
-
-                await fetch('/api/push/subscribe', {
-                    method: 'POST',
-                    body: JSON.stringify({ subscription, role: 'owner' }),
-                    headers: { 'Content-Type': 'application/json' }
-                });
-
-                alert('✅ Notifiche attivate con successo!');
-            } catch (err) {
-                alert('Attenzione: Per attivare le notifiche su iPhone devi prima aggiungere questa pagina alla Home e aprirla da lì.');
-                console.error(err);
-            }
+        document.getElementById('subscribeBtn').addEventListener('click', async () => {
+            const reg = await navigator.serviceWorker.register('/service-worker.js');
+            await navigator.serviceWorker.ready;
+            const subscription = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(publicKey)
+            });
+            await fetch('/api/push/subscribe', {
+                method: 'POST',
+                body: JSON.stringify({ subscription }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+            alert('✅ Notifiche Attivate!');
         });
     </script>
 </body>

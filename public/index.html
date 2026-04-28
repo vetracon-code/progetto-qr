@@ -77,7 +77,7 @@
             const btn = document.getElementById('refreshBtn');
             btn.innerText = "⏳...";
             try {
-                const res = await fetch("/api/reports?t=" + new Date().getTime());
+                const res = await fetch("https://progetto-qr.onrender.com/api/reports?t=" + new Date().getTime());
                 const reports = await res.json();
                 const list = document.getElementById("task-list");
                 const archive = document.getElementById("archive-list");

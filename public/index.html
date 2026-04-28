@@ -3,50 +3,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Segnalazioni QR</title>
+    <title>CityFix - Gestione</title>
     <link rel="manifest" href="/manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/564/564619.png">
     <style>
-        body { font-family: -apple-system, sans-serif; background: #f4f7f6; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; max-width: 320px; }
-        button { background: #007AFF; color: white; border: none; padding: 15px 25px; border-radius: 12px; font-weight: 600; width: 100%; cursor: pointer; }
+        :root { --red: #FF3B30; --yellow: #FFCC00; --green: #34C759; --blue: #007AFF; --gray: #8E8E93; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: #F2F2F7; margin: 0; padding: 20px; padding-bottom: 100px; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        h1 { font-size: 28px; font-weight: 700; margin: 0; }
+        .section-title { font-size: 14px; color: var(--gray); text-transform: uppercase; margin: 20px 0 10px; font-weight: 600; }
+        .card { background: white; border-radius: 16px; padding: 16px; margin-bottom: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-left: 6px solid var(--gray); }
+        .card.nuova { border-left-color: var(--red); }
+        .card.in-carico { border-left-color: var(--yellow); }
+        .card.risolta { border-left-color: var(--green); }
+        .poi-name { font-weight: 700; font-size: 18px; display: block; }
+        .issue { font-size: 16px; margin: 10px 0; }
+        button { width: 100%; padding: 12px; border-radius: 10px; border: none; font-weight: 600; cursor: pointer; }
+        .btn-accept { background: var(--yellow); color: black; }
+        .btn-complete { background: var(--green); color: white; }
+        .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: white; display: flex; padding: 15px; border-top: 1px solid #ddd; }
+        .tab-item { flex: 1; text-align: center; color: var(--gray); cursor: pointer; }
+        .tab-item.active { color: var(--blue); font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>Centro Notifiche</h1>
-        <p>Attiva le notifiche per ricevere le segnalazioni dei QR.</p>
-        <button id="subscribeBtn">ATTIVA NOTIFICHE</button>
+    <header><h1>CityFix</h1><button id="subscribeBtn" style="width:auto; padding: 5px 10px; font-size: 10px; background: var(--blue); color:white;">🔔 Attiva</button></header>
+    <div id="main-content"><div class="section-title">Attivi</div><div id="task-list"></div></div>
+    <div id="archive-section" style="display:none;"><div class="section-title">Archivio</div><div id="archive-list"></div></div>
+    <div class="tab-bar">
+        <div class="tab-item active" onclick="showTab('active')">⚡ Attivi</div>
+        <div class="tab-item" onclick="showTab('archive')">📂 Archivio</div>
     </div>
-
     <script>
         const publicKey = "BDRaXVWmCl7kQJwYu2HhNxAkLc6OKWdiQzngXVocjiRIX2HCYwxTGkS_YNS60NiRzS6qFY0sxO0cBFu-WwBimIE";
-
-        function urlBase64ToUint8Array(base64String) {
-            const padding = '='.repeat((4 - base64String.length % 4) % 4);
-            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-            const rawData = window.atob(base64);
-            const outputArray = new Uint8Array(rawData.length);
-            for (let i = 0; i < rawData.length; ++i) { outputArray[i] = rawData.charCodeAt(i); }
-            return outputArray;
+        function showTab(t) {
+            document.getElementById('main-content').style.display = t === 'active' ? 'block' : 'none';
+            document.getElementById('archive-section').style.display = t === 'archive' ? 'block' : 'none';
+            document.querySelectorAll('.tab-item').forEach(e => e.classList.remove('active'));
+            event.currentTarget.classList.add('active');
         }
-
-        document.getElementById('subscribeBtn').addEventListener('click', async () => {
+        async function loadReports() {
+            const res = await fetch("/api/reports");
+            const reports = await res.json();
+            const list = document.getElementById("task-list");
+            const archive = document.getElementById("archive-list");
+            list.innerHTML = ""; archive.innerHTML = "";
+            reports.forEach(r => {
+                const card = document.createElement('div');
+                card.className = `card ${r.status}`;
+                card.innerHTML = `<b>${r.poi_name}</b><div class="issue">${r.issue_type}</div>`;
+                if(r.status === 'nuova') {
+                    const b = document.createElement('button'); b.className='btn-accept'; b.innerText='PRENDI IN CARICO';
+                    b.onclick = () => updateStatus(r.id, 'in-carico'); card.appendChild(b);
+                    list.appendChild(card);
+                } else if(r.status === 'in-carico') {
+                    const b = document.createElement('button'); b.className='btn-complete'; b.innerText='COMPLETA';
+                    b.onclick = () => updateStatus(r.id, 'risolta'); card.appendChild(b);
+                    list.appendChild(card);
+                } else {
+                    card.innerHTML += '<small>Completato</small>'; archive.appendChild(card);
+                }
+            });
+        }
+        async function updateStatus(id, s) {
+            await fetch(`/api/reports/${id}/status`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({status:s, operatore:"Staff"}) });
+            loadReports();
+        }
+        document.getElementById('subscribeBtn').onclick = async () => {
             const reg = await navigator.serviceWorker.register('/service-worker.js');
-            await navigator.serviceWorker.ready;
-            const subscription = await reg.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(publicKey)
-            });
-            await fetch('/api/push/subscribe', {
-                method: 'POST',
-                body: JSON.stringify({ subscription }),
-                headers: { 'Content-Type': 'application/json' }
-            });
-            alert('✅ Notifiche Attivate!');
-        });
+            const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+            await fetch('/api/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub }), headers: { 'Content-Type': 'application/json' } });
+            alert('Notifiche OK');
+        };
+        function urlBase64ToUint8Array(b64) {
+            const padding = '='.repeat((4 - b64.length % 4) % 4);
+            const b = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const raw = window.atob(b);
+            const out = new Uint8Array(raw.length);
+            for (let i = 0; i < raw.length; ++i) out[i] = raw.charCodeAt(i);
+            return out;
+        }
+        setInterval(loadReports, 5000);
+        loadReports();
     </script>
 </body>
 </html>

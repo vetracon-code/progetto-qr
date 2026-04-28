@@ -18,18 +18,31 @@ webpush.setVapidDetails(
     process.env.VAPID_PRIVATE_KEY
 );
 
+// API LETTURA: Forziamo la pulizia dei dati in uscita
 app.get('/api/reports', async (req, res) => {
     try {
-        const result = await pool.query("SELECT r.*, poi.description as poi_name FROM reports r JOIN points_of_interest poi ON r.poi_id = poi.id ORDER BY r.created_at DESC");
+        const query = `
+            SELECT r.id, r.status, r.issue_type, r.created_at, poi.description as poi_name 
+            FROM reports r 
+            JOIN points_of_interest poi ON r.poi_id = poi.id 
+            ORDER BY r.created_at DESC`;
+        const result = await pool.query(query);
+        console.log("Report letti dal DB:", result.rows.length);
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error("ERRORE API GET REPORTS:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.post('/api/reports/:id/status', async (req, res) => {
     const { id } = req.params;
     const { status, operatore } = req.body;
     try {
-        await pool.query("UPDATE reports SET status = $1, assegnato_a = $2, completato_at = CASE WHEN $1 = 'risolta' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id = $3", [status, operatore, id]);
+        await pool.query(
+            "UPDATE reports SET status = $1, assegnato_a = $2, completato_at = CASE WHEN $1 = 'risolta' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id = $3",
+            [status, operatore, id]
+        );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -39,10 +52,17 @@ app.post('/api/report', async (req, res) => {
     try {
         const poiResult = await pool.query('SELECT id, description FROM points_of_interest WHERE slug = $1', [poi_slug]);
         if (poiResult.rows.length === 0) return res.status(404).send('POI non trovato');
+        
         const poi = poiResult.rows[0];
         await pool.query('INSERT INTO reports (poi_id, issue_type, status) VALUES ($1, $2, $3)', [poi.id, issue_type, 'nuova']);
+
         const subs = await pool.query('SELECT subscription FROM push_subscriptions');
-        const payload = JSON.stringify({ title: 'Nuova Segnalazione!', body: `POI: ${poi.description} - Problema: ${issue_type}`, url: '/' });
+        const payload = JSON.stringify({
+            title: 'Nuova Segnalazione!',
+            body: `POI: ${poi.description} - Problema: ${issue_type}`,
+            url: '/'
+        });
+
         subs.rows.forEach(s => webpush.sendNotification(s.subscription, payload).catch(err => console.error(err)));
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -56,4 +76,4 @@ app.post('/api/push/subscribe', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('Server in ascolto'));
+app.listen(PORT, () => console.log('Server in ascolto su porta ' + PORT));

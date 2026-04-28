@@ -1,92 +1,62 @@
-require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
 const webpush = require('web-push');
-const path = require('path');
 
 const app = express();
-const port = process.env.PORT || 3000;
+app.use(express.json());
+
+// LOG DI SICUREZZA: Stampa ogni singola richiesta che arriva
+app.use((req, res, next) => {
+    console.log(`RICHIESTA ARRIVATA: ${req.method} ${req.url}`);
+    next();
+});
+
+app.use(express.static('public'));
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
 });
 
 webpush.setVapidDetails(
-  process.env.VAPID_EMAIL,
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
+    process.env.VAPID_EMAIL,
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
 );
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.get('/api/reports', async (req, res) => {
+    try {
+        const result = await pool.query("SELECT r.id, r.status, r.issue_type, poi.description as poi_name FROM reports r JOIN points_of_interest poi ON r.poi_id = poi.id ORDER BY r.created_at DESC");
+        console.log("Dati inviati all'app:", result.rows.length, "righe");
+        res.json(result.rows);
+    } catch (err) {
+        console.error("Errore DB:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
 
-app.get('/api/push/public-key', (req, res) => {
-  res.json({ publicKey: process.env.VAPID_PUBLIC_KEY });
+app.post('/api/reports/:id/status', async (req, res) => {
+    try {
+        await pool.query("UPDATE reports SET status = $1 WHERE id = $2", [req.body.status, req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/report', async (req, res) => {
+    const { poi_slug, issue_type } = req.body;
+    try {
+        const poi = await pool.query('SELECT id, description FROM points_of_interest WHERE slug = $1', [poi_slug]);
+        await pool.query('INSERT INTO reports (poi_id, issue_type, status) VALUES ($1, $2, $3)', [poi.rows[0].id, issue_type, 'nuova']);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/push/subscribe', async (req, res) => {
-  const { subscription, role } = req.body;
-  try {
-    const subRes = await pool.query(
-      'INSERT INTO push_subscriptions (endpoint, p256dh, auth) VALUES ($1, $2, $3) ON CONFLICT (endpoint) DO UPDATE SET endpoint = EXCLUDED.endpoint RETURNING id',
-      [subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth]
-    );
-    const subId = subRes.rows[0].id;
-    await pool.query(
-      'INSERT INTO owner_device_vehicle_roles (subscription_id, role, target_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-      [subId, role || 'owner', 'all']
-    );
-    res.status(201).json({ success: true });
-  } catch (err) {
-    console.error("Errore iscrizione:", err);
-    res.status(500).json({ error: 'Errore iscrizione' });
-  }
+    try {
+        await pool.query('INSERT INTO push_subscriptions (subscription) VALUES ($1)', [req.body.subscription]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/submit-report', async (req, res) => {
-  const { poi_id, poi_name, issue_type } = req.body;
-  try {
-    await pool.query('INSERT INTO reports (poi_id, issue_type) VALUES ($1, $2)', [poi_id, issue_type]);
-    const subs = await pool.query("SELECT s.* FROM push_subscriptions s JOIN owner_device_vehicle_roles r ON s.id = r.subscription_id WHERE r.role = 'owner'");
-    const payload = JSON.stringify({
-      title: '⚠️ NUOVA SEGNALAZIONE',
-      body: `${poi_name}: ${issue_type}`,
-      url: '/'
-    });
-    const promises = subs.rows.map(sub => {
-      const pushConfig = { endpoint: sub.endpoint, keys: { auth: sub.auth, p256dh: sub.p256dh } };
-      return webpush.sendNotification(pushConfig, payload);
-    });
-    await Promise.all(promises);
-    res.send('<body style="font-family:sans-serif; text-align:center; padding-top:50px;"><h1>✅ Inviata!</h1><p>I proprietari sono stati avvisati.</p></body>');
-  } catch (err) {
-    console.error("ERRORE INVIO:", err);
-    res.status(500).send('<h1>❌ Errore Server</h1><p>' + err.message + '</p>');
-  }
-});
-
-app.get('/report/:slug', async (req, res) => {
-  const { slug } = req.params;
-  try {
-    const result = await pool.query('SELECT * FROM points_of_interest WHERE slug = $1', [slug]);
-    if (result.rows.length === 0) return res.status(404).send('Non trovato');
-    const poi = result.rows[0];
-    res.send(`
-      <div style="font-family:sans-serif; text-align:center; padding:20px; background:#f4f7f6; min-height:100vh;">
-        <h2>Segnala per: ${poi.description}</h2>
-        <form action="/submit-report" method="POST" style="background:white; padding:20px; border-radius:15px;">
-          <input type="hidden" name="poi_id" value="${poi.id}">
-          <input type="hidden" name="poi_name" value="${poi.description}">
-          <select name="issue_type" style="padding:15px; width:100%; border-radius:10px; margin-bottom:20px; font-size:16px;">
-            <option>Pieno</option><option>Rotto</option><option>Sporco</option>
-          </select>
-          <button style="padding:15px; background:#ff3b30; color:white; width:100%; border:none; border-radius:10px; font-weight:bold; font-size:16px;">INVIA SEGNALAZIONE</button>
-        </form>
-      </div>
-    `);
-  } catch (err) { res.status(500).send("Errore database."); }
-});
-
-app.listen(port, '0.0.0.0', () => console.log('Server su porta ' + port));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log('--- SERVER RIAVVIATO E PRONTO ---'));

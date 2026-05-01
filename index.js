@@ -1,16 +1,10 @@
 const express = require('express');
 const { Pool } = require('pg');
 const webpush = require('web-push');
+const path = require('path');
 
 const app = express();
 app.use(express.json());
-
-// LOG DI SICUREZZA: Stampa ogni singola richiesta che arriva
-app.use((req, res, next) => {
-    console.log(`RICHIESTA ARRIVATA: ${req.method} ${req.url}`);
-    next();
-});
-
 app.use(express.static('public'));
 
 const pool = new Pool({
@@ -24,17 +18,34 @@ webpush.setVapidDetails(
     process.env.VAPID_PRIVATE_KEY
 );
 
-app.get('/api/reports', async (req, res) => {
+// API PER IL PANNELLO ADMIN: Crea nuovi punti QR
+app.post('/api/admin/create-poi', async (req, res) => {
+    const { description, slug, service_id } = req.body;
     try {
-        const result = await pool.query("SELECT r.id, r.status, r.issue_type, poi.description as poi_name FROM reports r JOIN points_of_interest poi ON r.poi_id = poi.id ORDER BY r.created_at DESC");
-        console.log("Dati inviati all'app:", result.rows.length, "righe");
-        res.json(result.rows);
+        await pool.query(
+            'INSERT INTO points_of_interest (description, slug, service_type_id) VALUES ($1, $2, $3)',
+            [description, slug, service_id]
+        );
+        res.json({ success: true });
     } catch (err) {
-        console.error("Errore DB:", err);
+        console.error(err);
         res.status(500).json({ error: err.message });
     }
 });
 
+// API LETTURA REPORTS (Dashboard)
+app.get('/api/reports', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT r.id, r.status, r.issue_type, poi.description as poi_name 
+            FROM reports r 
+            JOIN points_of_interest poi ON r.poi_id = poi.id 
+            ORDER BY r.created_at DESC`);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// API CAMBIO STATO
 app.post('/api/reports/:id/status', async (req, res) => {
     try {
         await pool.query("UPDATE reports SET status = $1 WHERE id = $2", [req.body.status, req.params.id]);
@@ -42,11 +53,20 @@ app.post('/api/reports/:id/status', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// INVIO SEGNALAZIONE (User Side)
 app.post('/api/report', async (req, res) => {
     const { poi_slug, issue_type } = req.body;
     try {
         const poi = await pool.query('SELECT id, description FROM points_of_interest WHERE slug = $1', [poi_slug]);
+        if (poi.rows.length === 0) return res.status(404).send('POI non trovato');
+        
         await pool.query('INSERT INTO reports (poi_id, issue_type, status) VALUES ($1, $2, $3)', [poi.rows[0].id, issue_type, 'nuova']);
+
+        // Notifica Push
+        const subs = await pool.query('SELECT subscription FROM push_subscriptions');
+        const payload = JSON.stringify({ title: 'Nuova Segnalazione', body: `${poi.rows[0].description}: ${issue_type}`, url: '/' });
+        subs.rows.forEach(s => webpush.sendNotification(s.subscription, payload).catch(e => console.error(e)));
+
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -59,4 +79,4 @@ app.post('/api/push/subscribe', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('--- SERVER RIAVVIATO E PRONTO ---'));
+app.listen(PORT, () => console.log('--- SERVER ADMIN READY ---'));

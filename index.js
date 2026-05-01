@@ -12,28 +12,23 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-webpush.setVapidDetails(
-    process.env.VAPID_EMAIL,
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
-);
-
-// API PER IL PANNELLO ADMIN: Crea nuovi punti QR
+// API ADMIN: Crea un nuovo punto (POI)
 app.post('/api/admin/create-poi', async (req, res) => {
     const { description, slug, service_id } = req.body;
+    console.log("Tentativo creazione POI:", { description, slug, service_id });
+    
     try {
-        await pool.query(
-            'INSERT INTO points_of_interest (description, slug, service_type_id) VALUES ($1, $2, $3)',
-            [description, slug, service_id]
-        );
-        res.json({ success: true });
+        const query = 'INSERT INTO points_of_interest (description, slug, service_type_id) VALUES ($1, $2, $3) RETURNING *';
+        const result = await pool.query(query, [description, slug, service_id]);
+        console.log("POI Creato con successo:", result.rows[0]);
+        res.json({ success: true, data: result.rows[0] });
     } catch (err) {
-        console.error(err);
+        console.error("ERRORE CREAZIONE POI:", err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-// API LETTURA REPORTS (Dashboard)
+// API LETTURA REPORTS
 app.get('/api/reports', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -45,7 +40,7 @@ app.get('/api/reports', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// API CAMBIO STATO
+// API STATO
 app.post('/api/reports/:id/status', async (req, res) => {
     try {
         await pool.query("UPDATE reports SET status = $1 WHERE id = $2", [req.body.status, req.params.id]);
@@ -59,24 +54,10 @@ app.post('/api/report', async (req, res) => {
     try {
         const poi = await pool.query('SELECT id, description FROM points_of_interest WHERE slug = $1', [poi_slug]);
         if (poi.rows.length === 0) return res.status(404).send('POI non trovato');
-        
         await pool.query('INSERT INTO reports (poi_id, issue_type, status) VALUES ($1, $2, $3)', [poi.rows[0].id, issue_type, 'nuova']);
-
-        // Notifica Push
-        const subs = await pool.query('SELECT subscription FROM push_subscriptions');
-        const payload = JSON.stringify({ title: 'Nuova Segnalazione', body: `${poi.rows[0].description}: ${issue_type}`, url: '/' });
-        subs.rows.forEach(s => webpush.sendNotification(s.subscription, payload).catch(e => console.error(e)));
-
-        res.json({ success: true });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/push/subscribe', async (req, res) => {
-    try {
-        await pool.query('INSERT INTO push_subscriptions (subscription) VALUES ($1)', [req.body.subscription]);
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('--- SERVER ADMIN READY ---'));
+app.listen(PORT, () => console.log('Server Admin & App in ascolto...'));

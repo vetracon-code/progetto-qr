@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CityFix Admin | Gestione Punti</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/inter-ui/3.19.3/inter.css">
+    <style>
+        :root { --accent: #000; --gray: #666; --border: #EEE; }
+        body { font-family: 'Inter', sans-serif; background: #FFF; color: #000; margin: 0; padding: 40px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        h1 { font-size: 24px; font-weight: 800; letter-spacing: -1px; margin-bottom: 40px; }
+        .card { border: 1px solid var(--border); padding: 30px; border-radius: 12px; margin-bottom: 30px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+        input, select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 16px; outline: none; }
+        button { background: var(--accent); color: #FFF; border: none; padding: 15px; width: 100%; border-radius: 8px; font-weight: 600; cursor: pointer; }
+        .status { margin-top: 15px; font-size: 14px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Admin Control Panel</h1>
+        <div class="card">
+            <div class="form-group">
+                <label>Identificativo Posizione (es. Reception)</label>
+                <input type="text" id="poi-name" placeholder="Nome della zona">
+            </div>
+            <div class="form-group">
+                <label>Settore di Servizio</label>
+                <select id="service-type">
+                    <option value="1">Facility Management (Uffici)</option>
+                    <option value="2">Condomini (Manutenzione)</option>
+                    <option value="3">Horeca (Ristorazione)</option>
+                </select>
+            </div>
+            <button onclick="createQR()">GENERA PUNTO DI SEGNALAZIONE</button>
+            <div id="status" class="status"></div>
+        </div>
+    </div>
+
+    <script>
+        async function createQR() {
+            const desc = document.getElementById('poi-name').value;
+            const type = document.getElementById('service-type').value;
+            const statusDiv = document.getElementById('status');
+            
+            if(!desc) return alert("Inserisci un nome!");
+
+            const slug = desc.toLowerCase().trim().replace(/\s+/g, '-');
+            
+            try {
+                const res = await fetch('/api/admin/create-poi', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ description: desc, slug: slug, service_id: type })
+                });
+
+                if(res.ok) {
+                    statusDiv.style.color = "green";
+                    statusDiv.innerHTML = "Punto creato! Link: <br><b>https://progetto-qr.onrender.com/report/" + slug + "</b>";
+                } else {
+                    statusDiv.style.color = "red";
+                    statusDiv.innerText = "Errore durante la creazione.";
+                }
+            } catch(e) { console.error(e); }
+        }
+    </script>
+</body>
+</html>
